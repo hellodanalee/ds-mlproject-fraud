@@ -310,7 +310,7 @@ def add_region_fraud_rate_features(
         merge_df
         .groupby("region")["target"]
         .mean()  # Anteil target==1
-        .rename("f_region_fraud_rate")
+        .rename("f_t_region_fraud_rate")
         .reset_index()
     )
 
@@ -322,7 +322,7 @@ def add_region_fraud_rate_features(
 
     # 3) In collection_df einfügen
     result_df = collection_df.merge(
-        client_rate[["client_id", "f_region_fraud_rate"]],
+        client_rate[["client_id", "f_t_region_fraud_rate"]],
         on="client_id",
         how="left"
     )
@@ -480,6 +480,18 @@ def add_consump_agg(feature_dataframe, invoice) :
 
     return feature_dataframe
 
+def add_tarif_agg(feature_dataframe, invoice):
+
+    df_copy = invoice[['client_id', 'tarif_type']].copy()
+    
+    aggregated = df_copy.groupby('client_id')['tarif_type'].agg(
+        lambda x: pd.Series.mode(x)[0]
+    ).reset_index()
+     
+    feature_dataframe = feature_dataframe.merge(aggregated, on='client_id', how='left')
+    
+    return  feature_dataframe
+
 def calculate_mutual_information(feature_dataframe, target_col='target', exclude_cols=None, random_state=50):
 
     if exclude_cols is None:
@@ -531,3 +543,43 @@ def visualize_mutual_information(mi_results, title='MI on each feature',
         plt.show()
     
     return plt.gcf()
+
+def collectAllFeaturesBaseline():
+    """
+    Collect all features into a single DataFrame.
+
+    Parameters
+    ----------
+    feature_dataframe : pd.DataFrame
+        The DataFrame to which features will be added.
+    client : pd.DataFrame
+        Client DataFrame.
+    invoice : pd.DataFrame
+        Invoice DataFrame.
+    fraud_merged : pd.DataFrame
+        Merged DataFrame containing fraud information.
+
+    Returns
+    -------
+    pd.DataFrame
+        The `feature_dataframe` extended with all collected features.
+    """
+    fraud = Fraud(["./data/train/client_train.csv", "./data/train/invoice_train.csv"], target_column="target")
+    client  = fraud["./data/train/client_train.csv"]
+    invoice = fraud["./data/train/invoice_train.csv"]
+    fraud_merged = left_join_on("client_id", client, invoice)
+    feature_dataframe = fraud.get_target()
+
+    feature_dataframe = add_invoice_frequency_features(fraud_merged, feature_dataframe)
+    feature_dataframe = add_counter_statue_error_occured_features(fraud_merged, feature_dataframe)
+    feature_dataframe = add_counter_regions_features(fraud_merged, feature_dataframe)
+    feature_dataframe = add_region_fraud_rate_features(fraud_merged, feature_dataframe)
+    feature_dataframe = add_median_billing_frequence_per_region(fraud_merged, feature_dataframe)
+    feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_1")
+    feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_2")
+    feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_3")
+    feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_4")
+    feature_dataframe = add_consump_agg(feature_dataframe, invoice)
+    feature_dataframe = add_tarif_agg(feature_dataframe, invoice)
+
+    return feature_dataframe
