@@ -1,4 +1,11 @@
 
+import pandas as pd
+from sklearn.feature_selection import mutual_info_classif
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+
 # Calculate (new_index - old_index) 
 # Create a total of all consumption levels 
 # Create aggregation features for consumption and index
@@ -33,19 +40,19 @@ def create_consump_agg(feature_dataframe, invoice) :
     return feature_dataframe
 
 # Aggregate Tarif 
-def create_tarif_agg(invoice, client_df=None):
+def create_tarif_agg(feature_dataframe, invoice):
 
     df_copy = invoice[['client_id', 'tarif_type']].copy()
     
-    tarif_df = df_copy.groupby('client_id')['tarif_type'].agg(
-        lambda x: pd.Series.mode(x)[0] if not pd.Series.mode(x).empty else None
+    aggregated = df_copy.groupby('client_id')['tarif_type'].agg(
+        lambda x: pd.Series.mode(x)[0]
     ).reset_index()
     
-    if tarif_df is not None:
-        feature_dataframe = feature_dataframe.merge(tarif_df, on='client_id', how='left')
-        return feature_dataframe
-    else:
-        return  tarif_df
+
+    print(aggregated.head())    
+    feature_dataframe = feature_dataframe.merge(aggregated, on='client_id', how='left')
+    
+    return  feature_dataframe
 
 
 # Calculate a Mutual Information score 
@@ -103,3 +110,16 @@ def visualize_mutual_information(mi_results, title='MI on each feature',
         plt.show()
     
     return plt.gcf()
+
+
+
+
+if __name__ == "__main__":
+    invoice_df = pd.read_csv('data/invoice_train.csv')
+    client_df = pd.read_csv('data/client_train.csv')    
+
+    feature_dataframe = client_df[['client_id']].copy()
+    
+    feature_dataframe =create_tarif_agg(feature_dataframe, invoice_df )
+
+    print(feature_dataframe['tarif_type'].unique())
