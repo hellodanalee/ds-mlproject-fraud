@@ -106,21 +106,8 @@ class Fraud:
         """Return the internal mapping as a plain dict."""
         return dict(self._frames)
 
-    def get_target(self) -> pd.DataFrame:
-        """
-        Return a DataFrame with columns:
-         - client_id
-         - <your target column name>
-        """
-        if self._target is None:
-            raise ValueError("No target column was set at initialization")
-        # self._target ist eine pd.Series mit Index=client_id
-        # Mit reset_index() wandelt man beides in Spalten um
-        df_target = self._target.rename("target_column_name").reset_index()
-        # Optional: Spalten umbenennen, falls du statt "level_0" und dem Kolumnennamen
-        # eigene Bezeichnungen möchtest:
-        df_target.columns = ["client_id", self._target.name]
-        return df_target
+    def get_target(self, client) -> pd.DataFrame:
+        return client[["client_id", "target", "disrict", "region", "client_catg"]].copy() 
 
 
 # ---------------------------------------------------------------------- #
@@ -544,6 +531,97 @@ def visualize_mutual_information(mi_results, title='MI on each feature',
     
     return plt.gcf()
 
+def add_district_target_agg(feature_dataframe, client) :
+
+    df_copy = client.copy()
+
+    analysis_cols = ['target']
+    
+    # aggregate by district and calculate the mean of target variable
+    aggregated_df = df_copy.groupby('disrict')[analysis_cols].mean().reset_index()
+
+    # rename column
+    aggregated_df.rename(columns={'target': 'f_t_district_target_mean'}, inplace=True)
+
+    # merge to the feature_dataframe
+    feature_dataframe = feature_dataframe.merge(aggregated_df, on='disrict', how='left')
+
+    return feature_dataframe
+
+def add_client_catg_target_agg(feature_dataframe, client) :
+
+    df_copy = client.copy()
+
+    analysis_cols = ['target']
+    
+    # aggregate by client_catg and calculate the mean of target variable
+    aggregated_df = df_copy.groupby('client_catg')[analysis_cols].mean().reset_index()
+
+    # rename column
+    aggregated_df.rename(columns={'target': 'f_t_client_catg_target_mean'}, inplace=True)
+
+    # merge to the feature_dataframe
+    feature_dataframe = feature_dataframe.merge(aggregated_df, on='client_catg', how='left')
+
+    return feature_dataframe
+
+def add_index_cons_error_agg(feature_dataframe, invoice) :
+
+    df_copy = invoice.copy()
+
+    df_copy['index_cons_error'] = ((df_copy['new_index'] - df_copy['old_index']) -
+                                  (df_copy['consommation_level_1'] + df_copy['consommation_level_2'] +
+                                   df_copy['consommation_level_3'] + df_copy['consommation_level_4']))
+
+    analysis_cols = ['index_cons_error']
+    
+    # aggregate by client_id and calculate the sum
+    aggregated_df = df_copy.groupby('client_id')[analysis_cols].sum().reset_index()
+
+    # rename column
+    aggregated_df.rename(columns={'index_cons_error': 'f_index_cons_error_sum'}, inplace=True)
+
+    # merge to the feature_dataframe
+    feature_dataframe = feature_dataframe.merge(aggregated_df, on='client_id', how='left')
+
+    return feature_dataframe
+
+
+def add_counter_statue_agg(feature_dataframe, invoice) :
+
+    df_copy = invoice.copy()
+
+    # replace string values in counter_statue with numerical values of 0 to 5
+    df_copy['counter_statue'] = df_copy['counter_statue'].replace({
+        '0': 0,
+        '1': 1,
+        '2': 2,
+        '3': 3,
+        '4': 4,
+        '5': 5,
+    })
+
+    # replace 'counter_statue' values that out of range (0,6) with None:
+    df_copy['counter_statue'] = df_copy['counter_statue'].apply(lambda x: x if x in [0, 1, 2, 3, 4, 5] else None)
+
+    # fill None values in 'counter_statue' with the mode of the column:
+    from sklearn.impute import SimpleImputer
+    imputer = SimpleImputer(strategy='most_frequent')
+    df_copy['counter_statue'] = imputer.fit_transform(df_copy[['counter_statue']])
+
+    analysis_cols = ['counter_statue']
+    
+    # aggregate by client_id and calculate the mean
+    aggregated_df = df_copy.groupby('client_id')[analysis_cols].mean().reset_index()
+
+    # rename column
+    aggregated_df.rename(columns={'counter_statue': 'f_counter_statue_mean'}, inplace=True)
+
+    # merge to the feature_dataframe
+    feature_dataframe = feature_dataframe.merge(aggregated_df, on='client_id', how='left')
+
+    return feature_dataframe
+
 def collectAllFeaturesBaseline():
     """
     Collect all features into a single DataFrame.
@@ -568,8 +646,8 @@ def collectAllFeaturesBaseline():
     client  = fraud["./data/train/client_train.csv"]
     invoice = fraud["./data/train/invoice_train.csv"]
     fraud_merged = left_join_on("client_id", client, invoice)
-    feature_dataframe = fraud.get_target()
-
+    feature_dataframe = fraud.get_target(client)
+    print(feature_dataframe.head())
     feature_dataframe = add_invoice_frequency_features(fraud_merged, feature_dataframe)
     feature_dataframe = add_counter_statue_error_occured_features(fraud_merged, feature_dataframe)
     feature_dataframe = add_counter_regions_features(fraud_merged, feature_dataframe)
@@ -581,5 +659,10 @@ def collectAllFeaturesBaseline():
     feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_4")
     feature_dataframe = add_consump_agg(feature_dataframe, invoice)
     feature_dataframe = add_tarif_agg(feature_dataframe, invoice)
+    feature_dataframe = add_district_target_agg(feature_dataframe, client)
+    feature_dataframe = add_client_catg_target_agg(feature_dataframe, client)
+    feature_dataframe = add_index_cons_error_agg(feature_dataframe, invoice)
+    feature_dataframe = add_counter_statue_agg(feature_dataframe, invoice)
+    
 
     return feature_dataframe
