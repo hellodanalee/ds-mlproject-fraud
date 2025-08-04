@@ -1,39 +1,123 @@
-## Feature-Engineering Utility Functions (`add_*`)
+# 📘 Feature Engineering Functions Overview
 
-Below is a list of all `add_…` functions in your `fraud.py`, along with a brief English description of what each does:
+This document summarizes all feature-generating functions used in the `fraud.py` module of the fraud detection project.
 
-- **`add_invoice_frequency_features(merged_df, feature_df)`**  
-  Computes per-client statistics on the time gaps between invoices (e.g. mean, median, min, max days between invoices) and merges them into `feature_df`.
+---
 
-- **`add_counter_status_error_occured_features(merged_df, feature_df)`**  
-  Creates a binary flag indicating whether any meter status reading for a client was “faulty” or “error” at least once.
+### 1. `add_invoice_frequency_features()`
 
-- **`add_counter_regions_features(merged_df, feature_df)`**  
-  Flags clients whose invoices span more than one region (i.e. they have meter readings in multiple `region` values).
+Computes time-based frequency features from `invoice_date`:
+- `f_invoive_date_diff_days`: median days between invoices per client
+- `f_invoive_date_median_months`: same in months
+- `f_invoive_date_median_years`: same in years
 
-- **`add_region_fraud_rate_features(merged_df, feature_df)`**  
-  Calculates the fraud rate (mean of the `target`) for each `region`, then joins that regional rate back into the client-level `feature_df`.
+---
 
-- **`add_median_billing_frequency_per_region(merged_df, feature_df)`**  
-  Computes the median invoice‐interval (in days) for each region and adds that as a regional benchmark feature per client.
+### 2. `add_counter_statue_error_occured_features()`
 
-- **`add_std_dev_consumption_region(merged_df, feature_df)`**  
-  Measures the standard deviation of consumption across all clients within each region and merges that regional variability back in.
+Adds:
+- `f_counter_statue_error_occured`: 1 if any non-zero `counter_statue` exists for the client, else 0
 
-- **`add_consump_agg(merged_df, feature_df)`**  
-  Aggregates the four consumption tiers (`consommation_level_1`…`level_4`) per client into overall statistics (sum, mean, min, max, std).
+---
 
-- **`add_tarif_agg(merged_df, feature_df)`**  
-  Identifies the most frequent `tarif_type` per client (the “mode”) and attaches it as a categorical feature.
+### 3. `add_counter_regions_features()`
 
-- **`add_index_cons_error_agg(merged_df, feature_df)`**  
-  Calculates, for each client, the total discrepancy between `(new_index - old_index)` and the reported consumption—anomalies suggest potential manipulation.
+Adds:
+- `f_counter_regions`: 1 if the client has invoices linked to more than one unique region
 
-- **`add_counter_status_agg(merged_df, feature_df)`**  
-  Computes per-client aggregates of the meter status codes (e.g., average or counts of each status) to capture reading‐quality patterns.
+---
 
-- **`add_district_target_agg(merged_df, feature_df)`**  
-  Computes the fraud rate for each `district` (mean of `target`) and joins it as a district-level risk indicator per client.
+### 4. `add_region_fraud_rate_features()`
 
-- **`add_client_catg_target_agg(merged_df, feature_df)`**  
-  Computes the fraud rate per `client_catg` (client category) and merges it as a category-level risk feature.
+Adds:
+- `f_t_region_fraud_rate`: average fraud rate (target = 1) in the client's region
+
+---
+
+### 5. `add_median_billing_frequence_per_region()`
+
+Adds:
+- `f_region_median_billing_frequence_per`: median number of days between invoices in the client’s region
+
+---
+
+### 6. `add_sdt_dev_consumption_region(postfix)`
+
+Adds:
+- `f_region_std_deviation_consumption<postfix>`: standard deviation of consumption (e.g., `consommation_level_1`) per region
+
+---
+
+### 7. `add_consump_agg()`
+
+Aggregates the following per client:
+- `consommation_level_1-4`
+- `f_index_diff`: difference between `new_index` and `old_index`
+- `f_total_consumption`: sum of all levels  
+For each, computes: min, max, std, mean
+
+---
+
+### 8. `add_tarif_agg()`
+
+Adds:
+- Most frequent `tarif_type` per client
+
+---
+
+### 9. `add_index_cons_error_agg()`
+
+Adds:
+- `f_index_cons_error_sum`: cumulative difference between physical index delta and total consumption
+
+---
+
+### 10. `add_counter_statue_agg()`
+
+Adds:
+- `f_counter_statue_mean`: mean of encoded `counter_statue` values (0–5)
+
+---
+
+### 11. `add_client_tenure()`
+
+Adds:
+- `f_client_tenure_days`: number of days between account creation and last invoice
+
+---
+
+### 12. `add_meter_replacement_count_agg()`
+
+Adds:
+- `f_counter_number_nunique`: number of unique meter (counter) replacements per client
+
+---
+
+### 13. `add_tarif_change_count_agg()`
+
+Adds:
+- `f_tarif_change_count`: number of unique `tarif_type` values per client
+
+---
+
+### 14. `add_avg_consumption_per_month()`
+
+Adds:
+- `avg_consumption_per_month`: total consumption across invoices divided by total months billed
+
+---
+
+### 15. `add_reading_remarque_signals()`
+
+Adds:
+- `remarque_frequency`: share of invoices with a non-empty `reading_remarque`
+- `avg_remarque_length`: average number of characters in remarks (non-empty only)
+
+---
+
+### 16. `add_faulty_status_rate()`
+
+Adds:
+- `faulty_status_rate`: share of invoices where `counter_statue == "faulty"`
+
+---
