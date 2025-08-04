@@ -699,6 +699,142 @@ def add_client_tenure(
     )
     return result
 
+def add_meter_replacement_count_agg(feature_dataframe, invoice):
+
+    """    Create a feature that counts the number of meter replacements for each client.
+    The count is calculated as number of unique counter_number for each client.
+    """
+
+    df_copy = invoice.copy()
+    
+    # aggregate by client_id and calculate the unique count of counter_number
+    aggregated_df = df_copy.groupby('client_id')['counter_number'].nunique().reset_index()
+
+    # rename column
+    aggregated_df.rename(columns={'counter_number': 'f_counter_number_nunique'}, inplace=True)
+
+    # merge to the feature_dataframe
+    feature_dataframe = feature_dataframe.merge(aggregated_df, on='client_id', how='left')
+
+    return feature_dataframe
+
+def add_tarif_change_count_agg(feature_dataframe, invoice):
+
+    """    Create a feature that counts the number of tarif_type changes for each client.
+    The count is calculated as number of unique tarif_type for each client.
+    """
+
+    df_copy = invoice.copy()
+    
+    # aggregate by client_id and calculate the unique count of tarif_type
+    aggregated_df = df_copy.groupby('client_id')['tarif_type'].nunique().reset_index()
+
+    # rename column
+    aggregated_df.rename(columns={'tarif_type': 'f_tarif_change_count'}, inplace=True)
+
+    # merge to the feature_dataframe
+    feature_dataframe = feature_dataframe.merge(aggregated_df, on='client_id', how='left')
+
+    return feature_dataframe
+
+import pandas as pd
+
+def add_avg_consumption_per_month(merged, feature_dataframe):
+    """
+    Berechnet den durchschnittlichen Verbrauch pro Monat je Client
+    und merged das Ergebnis in den Feature-DataFrame (1:1 pro Client).
+
+    Die Funktion verwendet fest die Spalte 'client_id'.
+
+    Parameters
+    ----------
+    merged : pandas.DataFrame
+        Rechnungsdaten mit 1:n-Beziehung zu Clients, enthält 'client_id',
+        'consommation_level_1-4' und 'months_number'.
+    
+    feature_dataframe : pandas.DataFrame
+        Client-DataFrame (1 Zeile pro 'client_id'), mit dem das Ergebnis gemerged wird.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Der Feature-DataFrame mit zusätzlicher Spalte: 'avg_consumption_per_month'
+    """
+    df = merged.copy()
+
+    # 1. Gesamtverbrauch pro Rechnung berechnen
+    df['total_consumption'] = (
+        df['consommation_level_1'] +
+        df['consommation_level_2'] +
+        df['consommation_level_3'] +
+        df['consommation_level_4']
+    )
+
+    # 2. Aggregation je Client
+    agg_df = df.groupby('client_id').agg(
+        total_consumption=('total_consumption', 'sum'),
+        total_months=('months_number', 'sum')
+    ).reset_index()
+
+    # 3. Durchschnitt pro Monat berechnen
+    agg_df['avg_consumption_per_month'] = agg_df['total_consumption'] / agg_df['total_months']
+
+    # 4. Merge mit Feature-DataFrame
+    result_df = feature_dataframe.merge(
+        agg_df[['client_id', 'avg_consumption_per_month']],
+        on='client_id',
+        how='left'
+    )
+
+    return result_df
+
+import pandas as pd
+
+def add_reading_remarque_signals(merged, feature_dataframe):
+    """
+    Berechnet zwei Merkmale basierend auf reading_remarque:
+    - remarque_frequency: Anteil Rechnungen mit nicht-leerer Bemerkung
+    - avg_remarque_length: durchschnittliche Länge (in Zeichen) der Bemerkungen
+    
+    Ergebnis wird pro client_id aggregiert und ins Feature-DataFrame gemerged.
+
+    Parameters
+    ----------
+    merged : pandas.DataFrame
+        Rechnungsdaten mit 1:n-Beziehung zu Clients (enthält 'reading_remarque', 'client_id')
+    feature_dataframe : pandas.DataFrame
+        Basisdaten mit einer Zeile pro Client
+
+    Returns
+    -------
+    pandas.DataFrame
+        Der Feature-DataFrame mit zwei zusätzlichen Spalten:
+        ['remarque_frequency', 'avg_remarque_length']
+    """
+    df = merged.copy()
+
+    # Erzeuge Hilfsspalten
+    df['has_remarque'] = df['reading_remarque'].notna() & (df['reading_remarque'].astype(str).str.strip() != '')
+    df['remarque_length'] = df['reading_remarque'].astype(str).str.len().where(df['has_remarque'])
+
+    # Aggregation pro Client
+    agg_df = df.groupby('client_id').agg(
+        total_invoices=('reading_remarque', 'count'),
+        num_remarques=('has_remarque', 'sum'),
+        avg_remarque_length=('remarque_length', 'mean')
+    ).reset_index()
+
+    # Verhältnis berechnen
+    agg_df['remarque_frequency'] = agg_df['num_remarques'] / agg_df['total_invoices']
+
+    # Auswahl + Merge
+    result_df = feature_dataframe.merge(
+        agg_df[['client_id', 'remarque_frequency', 'avg_remarque_length']],
+        on='client_id',
+        how='left'
+    )
+
+    return result_df
 
 def collectAllFeaturesBaseline():
     """
@@ -739,6 +875,11 @@ def collectAllFeaturesBaseline():
     feature_dataframe = add_index_cons_error_agg(feature_dataframe, invoice)
     feature_dataframe = add_counter_statue_agg(feature_dataframe, invoice)
     feature_dataframe = add_client_tenure(fraud_merged, feature_dataframe)
+    feature_dataframe = add_meter_replacement_count_agg(feature_dataframe, invoice)
+    feature_dataframe = add_tarif_change_count_agg(feature_dataframe, invoice)
+    feature_dataframe = add_avg_consumption_per_month(fraud_merged, feature_dataframe)
+    feature_dataframe = add_reading_remarque_signals(fraud_merged, feature_dataframe)
+    feature_dataframe = add_faulty_status_rate(fraud_merged, feature_dataframe)
     # with target together aggregated
     feature_dataframe = add_region_fraud_rate_features(fraud_merged, feature_dataframe)
     feature_dataframe = add_district_target_agg(feature_dataframe, client)
@@ -747,6 +888,50 @@ def collectAllFeaturesBaseline():
 
     return feature_dataframe
 
+
+import pandas as pd
+
+def add_faulty_status_rate(merged, feature_dataframe):
+    """
+    Berechnet die Fehler-Quote (faulty_status_rate) pro Kunde basierend auf der Spalte 'counter_statue'.
+    
+    Definition:
+    - faulty_status_rate = Anzahl Rechnungen mit 'faulty' / Gesamtanzahl Rechnungen pro Kunde
+
+    Parameters
+    ----------
+    merged : pandas.DataFrame
+        Rechnungsdaten mit 1:n-Beziehung zu Clients (enthält 'counter_statue' und 'client_id')
+    feature_dataframe : pandas.DataFrame
+        Client-Tabelle mit 1 Zeile pro 'client_id'
+
+    Returns
+    -------
+    pandas.DataFrame
+        Der Feature-DataFrame mit zusätzlicher Spalte: 'faulty_status_rate'
+    """
+    df = merged.copy()
+
+    # 'faulty'-Status erkennen (Groß-/Kleinschreibung ignorieren, NaN sicher behandeln)
+    df['is_faulty'] = df['counter_statue'].astype(str).str.lower().eq('faulty')
+
+    # Aggregation
+    agg_df = df.groupby('client_id').agg(
+        total_invoices=('counter_statue', 'count'),
+        faulty_count=('is_faulty', 'sum')
+    ).reset_index()
+
+    # Verhältnis berechnen
+    agg_df['faulty_status_rate'] = agg_df['faulty_count'] / agg_df['total_invoices']
+
+    # Merge mit feature_dataframe
+    result_df = feature_dataframe.merge(
+        agg_df[['client_id', 'faulty_status_rate']],
+        on='client_id',
+        how='left'
+    )
+
+    return result_df
 
 def collectAllFeaturesBaselineTest():
     """
@@ -787,6 +972,38 @@ def collectAllFeaturesBaselineTest():
     feature_dataframe = add_index_cons_error_agg(feature_dataframe, invoice)
     feature_dataframe = add_counter_statue_agg(feature_dataframe, invoice)
     feature_dataframe = add_client_tenure(fraud_merged, feature_dataframe)
-    
+    feature_dataframe = add_meter_replacement_count_agg(feature_dataframe, invoice)
+    feature_dataframe = add_tarif_change_count_agg(feature_dataframe, invoice)
+    feature_dataframe = add_avg_consumption_per_month(fraud_merged, feature_dataframe)
+    feature_dataframe = add_reading_remarque_signals(fraud_merged, feature_dataframe)
+    feature_dataframe = add_faulty_status_rate(fraud_merged, feature_dataframe)
 
     return feature_dataframe
+
+def filter_feature_names_by_mi(df, min_mi, max_mi):
+    """
+    Gibt eine Liste von Feature-Namen zurück, deren MI-Wert zwischen min_mi und max_mi liegt.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame mit zwei Spalten: Feature-Name und MI-Wert.
+    min_mi : float
+        Untere Grenze (inklusive).
+    max_mi : float
+        Obere Grenze (inklusive).
+
+    Returns
+    -------
+    list of str
+        Liste der Feature-Namen, die im MI-Bereich liegen.
+    """
+    df_copy = df.copy()
+    
+    # Falls Spaltennamen fehlen oder falsch sind
+    if list(df_copy.columns) != ['feature', 'mi']:
+        df_copy.columns = ['feature', 'mi']
+    
+    # Filtern und Liste extrahieren
+    filtered = df_copy[(df_copy['mi'] >= min_mi) & (df_copy['mi'] <= max_mi)]
+    return filtered['feature'].tolist()
