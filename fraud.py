@@ -70,7 +70,7 @@ class Fraud:
                     self._target = df.set_index("client_id")[target_column]
                     break
             if self._target is None:
-                raise KeyError(f"Target column '{target_column}' not found in any loaded DataFrame")
+                print(f"Warning: Target column '{target_column}' not found in any loaded DataFrame. Proceeding without target.")
 
     # ------------------------------------------------------------------ #
     # Dictionary‑style helpers
@@ -107,8 +107,21 @@ class Fraud:
         return dict(self._frames)
 
     def get_target(self, client) -> pd.DataFrame:
-        return client[["client_id", "target", "disrict", "region", "client_catg"]].copy() 
+        # Basis-Spalten, die immer zurückkommen sollen
+        columns = ["client_id", "disrict", "region", "client_catg"]
 
+        # Nur hinzufügen, wenn target wirklich da ist
+        if "target" in client.columns:
+            columns.insert(1, "target")
+        else:
+            print("Warning: 'target' column not found. Returning features without target.")
+
+        # Nochmal absichern, dass alle Spalten existieren
+        missing = [c for c in columns if c not in client.columns]
+        if missing:
+            raise KeyError(f"Columns not found in client DataFrame: {missing}")
+
+        return client[columns].copy()
 
 # ---------------------------------------------------------------------- #
 # Data‑frame utilities
@@ -622,6 +635,71 @@ def add_counter_statue_agg(feature_dataframe, invoice) :
 
     return feature_dataframe
 
+
+
+# ---------------------------------------------------------------------- #
+# Utility: merge_on
+# ---------------------------------------------------------------------- #
+def merge_on(
+    left_df: pd.DataFrame,
+    right_df: pd.DataFrame,
+    on: str,
+    right_column: str
+) -> pd.DataFrame:
+    
+    if on not in left_df.columns:
+        raise KeyError(f"'{on}' not found in left_df columns")
+    if on not in right_df.columns:
+        raise KeyError(f"'{on}' not found in right_df columns")
+    if right_column not in right_df.columns:
+        raise KeyError(f"'{right_column}' not found in right_df columns")
+
+    to_merge = right_df[[on, right_column]].drop_duplicates()
+
+    merged = left_df.merge(to_merge, on=on, how="left")
+    return merged
+
+
+def add_client_tenure(
+    merge_df: pd.DataFrame,
+    feature_df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Compute client tenure as days between creation_date and most recent invoice_date.
+
+    Parameters
+    ----------
+    merge_df : pd.DataFrame
+        Left-merged client-to-invoice DataFrame containing 'client_id', 'creation_date', and 'invoice_date'.
+    feature_df : pd.DataFrame
+        DataFrame of client-level features to which 'client_tenure_days' will be added.
+
+    Returns
+    -------
+    pd.DataFrame
+        feature_df with a new column 'client_tenure_days'.
+    """
+    # Ensure datetime types
+    merge_df['creation_date'] = pd.to_datetime(merge_df['creation_date'])
+    merge_df['invoice_date'] = pd.to_datetime(merge_df['invoice_date'])
+
+    # Aggregate to compute max invoice_date and first creation_date per client
+    agg = merge_df.groupby('client_id').agg(
+        max_invoice_date=('invoice_date', 'max'),
+        first_creation_date=('creation_date', 'first')
+    ).reset_index()
+
+    # Calculate tenure in days
+    agg['f_client_tenure_days'] = (agg['max_invoice_date'] - agg['first_creation_date']).dt.days
+
+    # Merge back into feature_df
+    result = feature_df.merge(
+        agg[['client_id', 'f_client_tenure_days']],
+        on='client_id', how='left'
+    )
+    return result
+
+
 def collectAllFeaturesBaseline():
     """
     Collect all features into a single DataFrame.
@@ -651,7 +729,6 @@ def collectAllFeaturesBaseline():
     feature_dataframe = add_invoice_frequency_features(fraud_merged, feature_dataframe)
     feature_dataframe = add_counter_statue_error_occured_features(fraud_merged, feature_dataframe)
     feature_dataframe = add_counter_regions_features(fraud_merged, feature_dataframe)
-    feature_dataframe = add_region_fraud_rate_features(fraud_merged, feature_dataframe)
     feature_dataframe = add_median_billing_frequence_per_region(fraud_merged, feature_dataframe)
     feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_1")
     feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_2")
@@ -659,10 +736,57 @@ def collectAllFeaturesBaseline():
     feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_4")
     feature_dataframe = add_consump_agg(feature_dataframe, invoice)
     feature_dataframe = add_tarif_agg(feature_dataframe, invoice)
-    feature_dataframe = add_district_target_agg(feature_dataframe, client)
-    feature_dataframe = add_client_catg_target_agg(feature_dataframe, client)
     feature_dataframe = add_index_cons_error_agg(feature_dataframe, invoice)
     feature_dataframe = add_counter_statue_agg(feature_dataframe, invoice)
+    feature_dataframe = add_client_tenure(fraud_merged, feature_dataframe)
+    # with target together aggregated
+    feature_dataframe = add_region_fraud_rate_features(fraud_merged, feature_dataframe)
+    feature_dataframe = add_district_target_agg(feature_dataframe, client)
+    feature_dataframe = add_client_catg_target_agg(feature_dataframe, client)
+
+
+    return feature_dataframe
+
+
+def collectAllFeaturesBaselineTest():
+    """
+    Collect all features into a single DataFrame.
+
+    Parameters
+    ----------
+    feature_dataframe : pd.DataFrame
+        The DataFrame to which features will be added.
+    client : pd.DataFrame
+        Client DataFrame.
+    invoice : pd.DataFrame
+        Invoice DataFrame.
+    fraud_merged : pd.DataFrame
+        Merged DataFrame containing fraud information.
+
+    Returns
+    -------
+    pd.DataFrame
+        The `feature_dataframe` extended with all collected features.
+    """
+    fraud = Fraud(["./data/test/client_test.csv", "./data/test/invoice_test.csv"], None)
+    client  = fraud["./data/test/client_test.csv"]
+    invoice = fraud["./data/test/invoice_test.csv"]
+    fraud_merged = left_join_on("client_id", client, invoice)
+    feature_dataframe = fraud.get_target(client)
+    print(feature_dataframe.head())
+    feature_dataframe = add_invoice_frequency_features(fraud_merged, feature_dataframe)
+    feature_dataframe = add_counter_statue_error_occured_features(fraud_merged, feature_dataframe)
+    feature_dataframe = add_counter_regions_features(fraud_merged, feature_dataframe)
+    feature_dataframe = add_median_billing_frequence_per_region(fraud_merged, feature_dataframe)
+    feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_1")
+    feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_2")
+    feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_3")
+    feature_dataframe = add_sdt_dev_consumption_region(fraud_merged, feature_dataframe, postfix_consumption="_level_4")
+    feature_dataframe = add_consump_agg(feature_dataframe, invoice)
+    feature_dataframe = add_tarif_agg(feature_dataframe, invoice)
+    feature_dataframe = add_index_cons_error_agg(feature_dataframe, invoice)
+    feature_dataframe = add_counter_statue_agg(feature_dataframe, invoice)
+    feature_dataframe = add_client_tenure(fraud_merged, feature_dataframe)
     
 
     return feature_dataframe
