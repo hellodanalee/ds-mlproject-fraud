@@ -660,6 +660,46 @@ def merge_on(
     return merged
 
 
+def add_client_tenure(
+    merge_df: pd.DataFrame,
+    feature_df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Compute client tenure as days between creation_date and most recent invoice_date.
+
+    Parameters
+    ----------
+    merge_df : pd.DataFrame
+        Left-merged client-to-invoice DataFrame containing 'client_id', 'creation_date', and 'invoice_date'.
+    feature_df : pd.DataFrame
+        DataFrame of client-level features to which 'client_tenure_days' will be added.
+
+    Returns
+    -------
+    pd.DataFrame
+        feature_df with a new column 'client_tenure_days'.
+    """
+    # Ensure datetime types
+    merge_df['creation_date'] = pd.to_datetime(merge_df['creation_date'])
+    merge_df['invoice_date'] = pd.to_datetime(merge_df['invoice_date'])
+
+    # Aggregate to compute max invoice_date and first creation_date per client
+    agg = merge_df.groupby('client_id').agg(
+        max_invoice_date=('invoice_date', 'max'),
+        first_creation_date=('creation_date', 'first')
+    ).reset_index()
+
+    # Calculate tenure in days
+    agg['f_client_tenure_days'] = (agg['max_invoice_date'] - agg['first_creation_date']).dt.days
+
+    # Merge back into feature_df
+    result = feature_df.merge(
+        agg[['client_id', 'f_client_tenure_days']],
+        on='client_id', how='left'
+    )
+    return result
+
+
 def collectAllFeaturesBaseline():
     """
     Collect all features into a single DataFrame.
@@ -698,6 +738,8 @@ def collectAllFeaturesBaseline():
     feature_dataframe = add_tarif_agg(feature_dataframe, invoice)
     feature_dataframe = add_index_cons_error_agg(feature_dataframe, invoice)
     feature_dataframe = add_counter_statue_agg(feature_dataframe, invoice)
+    feature_dataframe = add_client_tenure(fraud_merged, feature_dataframe)
+    # with target together aggregated
     feature_dataframe = add_region_fraud_rate_features(fraud_merged, feature_dataframe)
     feature_dataframe = add_district_target_agg(feature_dataframe, client)
     feature_dataframe = add_client_catg_target_agg(feature_dataframe, client)
@@ -744,6 +786,7 @@ def collectAllFeaturesBaselineTest():
     feature_dataframe = add_tarif_agg(feature_dataframe, invoice)
     feature_dataframe = add_index_cons_error_agg(feature_dataframe, invoice)
     feature_dataframe = add_counter_statue_agg(feature_dataframe, invoice)
+    feature_dataframe = add_client_tenure(fraud_merged, feature_dataframe)
     
 
     return feature_dataframe
