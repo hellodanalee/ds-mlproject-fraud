@@ -721,6 +721,11 @@ def addCombinations(feature_dataframe):
     feature_dataframe = combine_features(feature_dataframe, "avg_remarque_length", "f_counter_number_nunique", "*","f_combi1")
     feature_dataframe = combine_features(feature_dataframe, "remarque_frequency", "f_tarif_change_count", "*","f_combi2")
     feature_dataframe = combine_features(feature_dataframe, "f_total_consumption_std", "f_counter_statue_error_occured", "/","f_combi3")
+    feature_dataframe = combine_features(feature_dataframe,"f_region_std_deviation_consumption_level_3", "f_index_diff_mean", "*", "f_combi4")
+
+    feature_dataframe = combine_features(feature_dataframe, "f_counter_number_nunique", "remarque_frequency", "*","f_combi5")
+    feature_dataframe = combine_features(feature_dataframe, "f_counter_statue_error_occured", "remarque_frequency", "*","f_combi6")
+    feature_dataframe = combine_features(feature_dataframe,"f_index_diff_mean", "remarque_frequency", "*", "f_combi7")
 
     return feature_dataframe
 
