@@ -13,38 +13,15 @@ import pandas as pd
 from sklearn.feature_selection import mutual_info_classif
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
 
 
 class Fraud:
-    """
-    Container that lazily reads a list of CSV files and stores them in
-    a hash‑map‑like structure (``dict``) mapping *file path* → *pd.DataFrame*.
-
-    Examples
-    --------
-    >>> f = Fraud(["data/client.csv", "data/invoice.csv"])
-    >>> isinstance(f["data/client.csv"], pd.DataFrame)
-    True
-    >>> len(f)
-    2
-    """
-
     def __init__(
         self,
         csv_files: Union[Iterable[str], Iterable[Path]],
         target_column: str | None = None,
     ) -> None:
-        """
-        Parameters
-        ----------
-        csv_files
-            Iterable with paths (``str`` or ``pathlib.Path``) to CSV files.
-
-        Notes
-        -----
-        * Files are read eagerly via :pyfunc:`pandas.read_csv`.
-        * Duplicate paths (after resolving) are ignored.
-        """
         self._frames: Dict[str, pd.DataFrame] = {}
 
         for path in csv_files:
@@ -134,34 +111,6 @@ def left_join_on(
     suffixes: tuple[str, str] = ("_left", "_right"),
     validate: str | None = "one_to_many",
 ) -> pd.DataFrame:
-    """
-    Perform a **left join** between two DataFrames on a given column name.
-
-    Parameters
-    ----------
-    key
-        Column on which to join.
-    left_df, right_df
-        The two DataFrames to merge. ``left_df`` is considered the *primary*
-        table (all seine Zeilen bleiben erhalten).
-    suffixes
-        Suffixes to apply to overlapping column names other than *key*.
-    validate
-        Passed through to :pyfunc:`pandas.merge` to enforce merge expectations.
-        Use ``None`` to skip validation.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Resulting DataFrame with columns from *left* plus matching columns
-        from *right*.
-
-    Examples
-    --------
-    >>> joined = left_join_on("client_id", client_df, invoice_df)
-    >>> joined.shape
-    (1000, 25)
-    """
     if key not in left_df.columns:
         raise KeyError(f"'{key}' not found in left_df columns")
     if key not in right_df.columns:
@@ -178,24 +127,6 @@ def left_join_on(
 def add_invoice_frequency_features(
     merge_df: pd.DataFrame, collection_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Add invoice frequency features to the DataFrame.
-
-    Parameters
-    ----------
-    merge_df : pd.DataFrame
-        DataFrame containing 'client_id' and 'invoice_date' columns to compute frequency on.
-    collection_df : pd.DataFrame
-        DataFrame (e.g., merged client table) to which the aggregated features will be added.
-
-    Returns
-    -------
-    pd.DataFrame
-        The `collection_df` extended with:
-        - f_invoive_date_diff_days
-        - f_invoive_date_median_months
-        - f_invoive_date_median_years
-    """
     # Copy to avoid modifying original
     df_copy = merge_df.copy()
     # Convert invoice_date to datetime
@@ -229,22 +160,6 @@ def add_invoice_frequency_features(
 def add_counter_statue_error_occured_features(
     merge_df: pd.DataFrame, collection_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Add a binary feature indicating whether any non-zero counter_status occurred.
-
-    Parameters
-    ----------
-    merge_df : pd.DataFrame
-        DataFrame containing 'client_id' and 'counter_statue' columns.
-    collection_df : pd.DataFrame
-        DataFrame (e.g., merged client table) to which the aggregated feature will be added.
-
-    Returns
-    -------
-    pd.DataFrame
-        The `collection_df` extended with:
-        - f_counter_statue_error_occured: 1 if any counter_statue != '0', else 0.
-    """
     # Copy to avoid modifying original
     df_copy = merge_df.copy()
     # Determine if any error occurred per client (status != '0')
@@ -264,22 +179,6 @@ def add_counter_statue_error_occured_features(
 def add_counter_regions_features(
     merge_df: pd.DataFrame, collection_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Add a binary feature indicating whether a client spans multiple regions.
-
-    Parameters
-    ----------
-    merge_df : pd.DataFrame
-        DataFrame containing 'client_id' and 'region' columns.
-    collection_df : pd.DataFrame
-        DataFrame (e.g., merged client table) to which the aggregated feature will be added.
-
-    Returns
-    -------
-    pd.DataFrame
-        The `collection_df` extended with:
-        - f_counter_regions: 1 if the client has more than one unique region, else 0.
-    """
     # Copy to avoid modifying original
     df_copy = merge_df.copy()
     # Count unique regions per client
@@ -301,10 +200,6 @@ def add_counter_regions_features(
 def add_region_fraud_rate_features(
     merge_df: pd.DataFrame, collection_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Add the fraud rate per region as a feature.
-    ...
-    """
     # 1) Fraud-Rate pro Region berechnen
     region_rates = (
         merge_df
@@ -329,29 +224,9 @@ def add_region_fraud_rate_features(
     return result_df
 
 
-# ---------------------------------------------------------------------- #
-# New feature: f_median_billing_frequence_per_region
-# ---------------------------------------------------------------------- #
 def add_median_billing_frequence_per_region(
     merge_df: pd.DataFrame, collection_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Add median billing frequency per region as a feature.
-
-    Parameters
-    ----------
-    merge_df : pd.DataFrame
-        DataFrame containing 'client_id', 'invoice_date', and 'region' columns.
-    collection_df : pd.DataFrame
-        DataFrame (e.g., merged client table) to which the aggregated feature will be added.
-
-    Returns
-    -------
-    pd.DataFrame
-        The `collection_df` extended with:
-        - f_median_billing_frequence_per_region: median interval in days
-          between consecutive invoices of all customers in each region.
-    """
     # Copy to avoid modifying original
     df_copy = merge_df.copy()
     # Convert invoice_date to datetime
@@ -397,24 +272,6 @@ def add_sdt_dev_consumption_region(
     collection_df: pd.DataFrame,
     postfix_consumption: str
 ) -> pd.DataFrame:
-    """
-    Add standard deviation of consumption values per region as a feature.
-
-    Parameters
-    ----------
-    merge_df : pd.DataFrame
-        DataFrame containing 'client_id', 'region' und dynamische Verbrauchs-Spalte.
-    collection_df : pd.DataFrame
-        DataFrame (z.B. Kunden-Tabelle), dem das Feature hinzugefügt wird.
-    postfix_consumption : str
-        Suffix, das an den Basis-Spaltennamen 'consumption' und an den Feature-Namen angehängt wird.
-
-    Returns
-    -------
-    pd.DataFrame
-        Das `collection_df` mit folgender neuer Spalte:
-        - f_region_std_deviation_consumption<postfix>: Standardabweichung der Verbrauchswerte pro Region.
-    """
     # Copy to avoid modifying original
     df_copy = merge_df.copy()
 
@@ -668,21 +525,6 @@ def add_client_tenure(
     merge_df: pd.DataFrame,
     feature_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Compute client tenure as days between creation_date and most recent invoice_date.
-
-    Parameters
-    ----------
-    merge_df : pd.DataFrame
-        Left-merged client-to-invoice DataFrame containing 'client_id', 'creation_date', and 'invoice_date'.
-    feature_df : pd.DataFrame
-        DataFrame of client-level features to which 'client_tenure_days' will be added.
-
-    Returns
-    -------
-    pd.DataFrame
-        feature_df with a new column 'client_tenure_days'.
-    """
     # Ensure datetime types
     merge_df['creation_date'] = pd.to_datetime(merge_df['creation_date'])
     merge_df['invoice_date'] = pd.to_datetime(merge_df['invoice_date'])
@@ -704,11 +546,6 @@ def add_client_tenure(
     return result
 
 def add_meter_replacement_count_agg(feature_dataframe, invoice):
-
-    """    Create a feature that counts the number of meter replacements for each client.
-    The count is calculated as number of unique counter_number for each client.
-    """
-
     df_copy = invoice.copy()
     
     # aggregate by client_id and calculate the unique count of counter_number
@@ -723,11 +560,6 @@ def add_meter_replacement_count_agg(feature_dataframe, invoice):
     return feature_dataframe
 
 def add_tarif_change_count_agg(feature_dataframe, invoice):
-
-    """    Create a feature that counts the number of tarif_type changes for each client.
-    The count is calculated as number of unique tarif_type for each client.
-    """
-
     df_copy = invoice.copy()
     
     # aggregate by client_id and calculate the unique count of tarif_type
@@ -744,26 +576,6 @@ def add_tarif_change_count_agg(feature_dataframe, invoice):
 import pandas as pd
 
 def add_avg_consumption_per_month(merged, feature_dataframe):
-    """
-    Berechnet den durchschnittlichen Verbrauch pro Monat je Client
-    und merged das Ergebnis in den Feature-DataFrame (1:1 pro Client).
-
-    Die Funktion verwendet fest die Spalte 'client_id'.
-
-    Parameters
-    ----------
-    merged : pandas.DataFrame
-        Rechnungsdaten mit 1:n-Beziehung zu Clients, enthält 'client_id',
-        'consommation_level_1-4' und 'months_number'.
-    
-    feature_dataframe : pandas.DataFrame
-        Client-DataFrame (1 Zeile pro 'client_id'), mit dem das Ergebnis gemerged wird.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Der Feature-DataFrame mit zusätzlicher Spalte: 'avg_consumption_per_month'
-    """
     df = merged.copy()
 
     # 1. Gesamtverbrauch pro Rechnung berechnen
@@ -792,29 +604,9 @@ def add_avg_consumption_per_month(merged, feature_dataframe):
 
     return result_df
 
-import pandas as pd
+
 
 def add_reading_remarque_signals(merged, feature_dataframe):
-    """
-    Berechnet zwei Merkmale basierend auf reading_remarque:
-    - remarque_frequency: Anteil Rechnungen mit nicht-leerer Bemerkung
-    - avg_remarque_length: durchschnittliche Länge (in Zeichen) der Bemerkungen
-    
-    Ergebnis wird pro client_id aggregiert und ins Feature-DataFrame gemerged.
-
-    Parameters
-    ----------
-    merged : pandas.DataFrame
-        Rechnungsdaten mit 1:n-Beziehung zu Clients (enthält 'reading_remarque', 'client_id')
-    feature_dataframe : pandas.DataFrame
-        Basisdaten mit einer Zeile pro Client
-
-    Returns
-    -------
-    pandas.DataFrame
-        Der Feature-DataFrame mit zwei zusätzlichen Spalten:
-        ['remarque_frequency', 'avg_remarque_length']
-    """
     df = merged.copy()
 
     # Erzeuge Hilfsspalten
@@ -841,25 +633,6 @@ def add_reading_remarque_signals(merged, feature_dataframe):
     return result_df
 
 def collectAllFeaturesBaseline():
-    """
-    Collect all features into a single DataFrame.
-
-    Parameters
-    ----------
-    feature_dataframe : pd.DataFrame
-        The DataFrame to which features will be added.
-    client : pd.DataFrame
-        Client DataFrame.
-    invoice : pd.DataFrame
-        Invoice DataFrame.
-    fraud_merged : pd.DataFrame
-        Merged DataFrame containing fraud information.
-
-    Returns
-    -------
-    pd.DataFrame
-        The `feature_dataframe` extended with all collected features.
-    """
     fraud = Fraud(["./data/train/client_train.csv", "./data/train/invoice_train.csv"], target_column="target")
     client  = fraud["./data/train/client_train.csv"]
     invoice = fraud["./data/train/invoice_train.csv"]
@@ -892,28 +665,7 @@ def collectAllFeaturesBaseline():
 
     return feature_dataframe
 
-
-import pandas as pd
-
 def add_faulty_status_rate(merged, feature_dataframe):
-    """
-    Berechnet die Fehler-Quote (faulty_status_rate) pro Kunde basierend auf der Spalte 'counter_statue'.
-    
-    Definition:
-    - faulty_status_rate = Anzahl Rechnungen mit 'faulty' / Gesamtanzahl Rechnungen pro Kunde
-
-    Parameters
-    ----------
-    merged : pandas.DataFrame
-        Rechnungsdaten mit 1:n-Beziehung zu Clients (enthält 'counter_statue' und 'client_id')
-    feature_dataframe : pandas.DataFrame
-        Client-Tabelle mit 1 Zeile pro 'client_id'
-
-    Returns
-    -------
-    pandas.DataFrame
-        Der Feature-DataFrame mit zusätzlicher Spalte: 'faulty_status_rate'
-    """
     df = merged.copy()
 
     # 'faulty'-Status erkennen (Groß-/Kleinschreibung ignorieren, NaN sicher behandeln)
@@ -938,25 +690,6 @@ def add_faulty_status_rate(merged, feature_dataframe):
     return result_df
 
 def collectAllFeaturesBaselineTest():
-    """
-    Collect all features into a single DataFrame.
-
-    Parameters
-    ----------
-    feature_dataframe : pd.DataFrame
-        The DataFrame to which features will be added.
-    client : pd.DataFrame
-        Client DataFrame.
-    invoice : pd.DataFrame
-        Invoice DataFrame.
-    fraud_merged : pd.DataFrame
-        Merged DataFrame containing fraud information.
-
-    Returns
-    -------
-    pd.DataFrame
-        The `feature_dataframe` extended with all collected features.
-    """
     fraud = Fraud(["./data/test/client_test.csv", "./data/test/invoice_test.csv"], None)
     client  = fraud["./data/test/client_test.csv"]
     invoice = fraud["./data/test/invoice_test.csv"]
@@ -984,24 +717,15 @@ def collectAllFeaturesBaselineTest():
 
     return feature_dataframe
 
+def addCombinations(feature_dataframe):
+    feature_dataframe = combine_features(feature_dataframe, "avg_remarque_length", "f_counter_number_nunique", "*","f_combi1")
+    feature_dataframe = combine_features(feature_dataframe, "remarque_frequency", "f_tarif_change_count", "*","f_combi2")
+    feature_dataframe = combine_features(feature_dataframe, "f_total_consumption_std", "f_counter_statue_error_occured", "/","f_combi3")
+
+    return feature_dataframe
+
+
 def filter_feature_names_by_mi(df, min_mi, max_mi):
-    """
-    Gibt eine Liste von Feature-Namen zurück, deren MI-Wert zwischen min_mi und max_mi liegt.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        DataFrame mit zwei Spalten: Feature-Name und MI-Wert.
-    min_mi : float
-        Untere Grenze (inklusive).
-    max_mi : float
-        Obere Grenze (inklusive).
-
-    Returns
-    -------
-    list of str
-        Liste der Feature-Namen, die im MI-Bereich liegen.
-    """
     df_copy = df.copy()
     
     # Falls Spaltennamen fehlen oder falsch sind
@@ -1011,3 +735,25 @@ def filter_feature_names_by_mi(df, min_mi, max_mi):
     # Filtern und Liste extrahieren
     filtered = df_copy[(df_copy['mi'] >= min_mi) & (df_copy['mi'] <= max_mi)]
     return filtered['feature'].tolist()
+
+def combine_features(df, feature1, feature2, operation, name):
+    if feature1 not in df.columns or feature2 not in df.columns:
+        raise ValueError(f"One or both features '{feature1}', '{feature2}' not in DataFrame.")
+
+    if operation == '+':
+        df[name] = df[feature1] + df[feature2]
+    elif operation == '-':
+        df[name] = df[feature1] - df[feature2]
+    elif operation == '*':
+        df[name] = df[feature1] * df[feature2]
+    elif operation == '/':
+        df[name] = df[feature1] / (df[feature2] + 0.1)  # avoid division by zero by adding small constant
+    else:
+        raise ValueError("Operation must be one of '+', '-', '*', '/'")
+
+    # Move the new column to the end to preserve order control
+    columns = list(df.columns)
+    columns.append(columns.pop(columns.index(name)))
+    df = df[columns]
+
+    return df
