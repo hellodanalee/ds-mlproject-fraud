@@ -518,7 +518,7 @@ def calculate_mutual_information(feature_dataframe, target_col='target', exclude
 
 def visualize_mutual_information(mi_results, title='MI on each feature', 
                                  xlabel='Mutual Information', ylabel='Feature',
-                                 figsize=(12, 10), top_n=None, show=True):
+                                 figsize=(16, 10), top_n=None, show=True):
     # Set a Top_n 
     if top_n is not None and top_n < len(mi_results):
         plot_data = mi_results.head(top_n).copy()
@@ -529,13 +529,17 @@ def visualize_mutual_information(mi_results, title='MI on each feature',
     plt.figure(figsize=figsize)
     ax = sns.barplot(x='MI_Score', y='Feature', data=plot_data)
     
-    plt.title(title, fontsize=15)
-    plt.xlabel(xlabel, fontsize=12)
-    plt.ylabel(ylabel, fontsize=12)
+    plt.title(title, fontsize=20)
+    plt.xlabel(xlabel, fontsize=18)
+    plt.ylabel(ylabel, fontsize=18)
     
-    # Show a value index (선택적)
+    # Set axis tick font sizes
+    ax.tick_params(axis='x', labelsize=18)
+    ax.tick_params(axis='y', labelsize=18)
+
+    # Show a value index
     for i, v in enumerate(plot_data['MI_Score']):
-        ax.text(v + 0.001, i, f'{v:.4f}', va='center')
+        ax.text(v + 0.001, i, f'{v:.4f}', va='center', fontsize=18)
     
     plt.tight_layout()
     
