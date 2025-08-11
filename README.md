@@ -1,6 +1,6 @@
 # Fraud Detection Project – August 2025
 
-**Team:** Sasch, Dana, Murat  
+**Team:** Sasha, Dana, Murat  
 **Best Zindi Score:** 0.083 (Rank 193/595)  
 **Date:** August 2025  
 
