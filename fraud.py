@@ -632,7 +632,7 @@ def add_reading_remarque_signals(merged, feature_dataframe):
 
     return result_df
 
-def collectAllFeaturesBaseline():
+def collectAllFeaturesBaseline(without_t_features=False):
     fraud = Fraud(["./data/train/client_train.csv", "./data/train/invoice_train.csv"], target_column="target")
     client  = fraud["./data/train/client_train.csv"]
     invoice = fraud["./data/train/invoice_train.csv"]
@@ -658,12 +658,15 @@ def collectAllFeaturesBaseline():
     feature_dataframe = add_reading_remarque_signals(fraud_merged, feature_dataframe)
     feature_dataframe = add_faulty_status_rate(fraud_merged, feature_dataframe)
     # with target together aggregated
-    feature_dataframe = add_region_fraud_rate_features(fraud_merged, feature_dataframe)
-    feature_dataframe = add_district_target_agg(feature_dataframe, client)
-    feature_dataframe = add_client_catg_target_agg(feature_dataframe, client)
+    if not without_t_features:
+        feature_dataframe = add_region_fraud_rate_features(fraud_merged, feature_dataframe)
+        feature_dataframe = add_district_target_agg(feature_dataframe, client)
+        feature_dataframe = add_client_catg_target_agg(feature_dataframe, client)
 
 
     return feature_dataframe
+
+
 
 def add_faulty_status_rate(merged, feature_dataframe):
     df = merged.copy()
@@ -718,14 +721,42 @@ def collectAllFeaturesBaselineTest():
     return feature_dataframe
 
 def addCombinations(feature_dataframe):
+
     feature_dataframe = combine_features(feature_dataframe, "avg_remarque_length", "f_counter_number_nunique", "*","f_combi1")
     feature_dataframe = combine_features(feature_dataframe, "remarque_frequency", "f_tarif_change_count", "*","f_combi2")
-    feature_dataframe = combine_features(feature_dataframe, "f_total_consumption_std", "f_counter_statue_error_occured", "/","f_combi3")
-    feature_dataframe = combine_features(feature_dataframe,"f_region_std_deviation_consumption_level_3", "f_index_diff_mean", "*", "f_combi4")
+    feature_dataframe = combine_features(feature_dataframe, "avg_remarque_length", "f_counter_statue_error_occured", "/","f_combi3")
+    feature_dataframe = combine_features(feature_dataframe,"avg_remarque_length", "f_index_diff_mean", "*", "f_combi4")
 
     feature_dataframe = combine_features(feature_dataframe, "f_counter_number_nunique", "remarque_frequency", "*","f_combi5")
-    feature_dataframe = combine_features(feature_dataframe, "f_counter_statue_error_occured", "remarque_frequency", "*","f_combi6")
+    feature_dataframe = combine_features(feature_dataframe, "avg_remarque_length", "remarque_frequency", "*","f_combi6")
     feature_dataframe = combine_features(feature_dataframe,"f_index_diff_mean", "remarque_frequency", "*", "f_combi7")
+
+
+    
+
+    return feature_dataframe
+
+def addCombinationsT(feature_dataframe, operation="*"):
+
+    feature_dataframe = combine_features(feature_dataframe, "avg_remarque_length", "f_t_region_fraud_rate", operation,"f_t_combi1")
+    feature_dataframe = combine_features(feature_dataframe, "avg_remarque_length", "f_t_district_target_mean", operation,"f_t_combi2")
+    feature_dataframe = combine_features(feature_dataframe, "avg_remarque_length", "f_t_client_catg_target_mean", operation,"f_t_combi3")
+
+    feature_dataframe = combine_features(feature_dataframe, "remarque_frequency", "f_t_region_fraud_rate", operation,"f_t_combi4")
+    feature_dataframe = combine_features(feature_dataframe, "remarque_frequency", "f_t_district_target_mean", operation,"f_t_combi5")
+    feature_dataframe = combine_features(feature_dataframe, "remarque_frequency", "f_t_client_catg_target_mean", operation,"f_t_combi6")
+
+    feature_dataframe = combine_features(feature_dataframe, "client_catg", "f_t_region_fraud_rate", operation,"f_t_combi7")
+    feature_dataframe = combine_features(feature_dataframe, "client_catg", "f_t_district_target_mean", operation,"f_t_combi8")
+    feature_dataframe = combine_features(feature_dataframe, "client_catg", "f_t_client_catg_target_mean", operation,"f_t_combi9")
+
+    feature_dataframe = combine_features(feature_dataframe, "f_counter_number_nunique", "f_t_region_fraud_rate", operation,"f_t_combi10")
+    feature_dataframe = combine_features(feature_dataframe, "f_counter_number_nunique", "f_t_district_target_mean", operation,"f_t_combi11")
+    feature_dataframe = combine_features(feature_dataframe, "f_counter_number_nunique", "f_t_client_catg_target_mean", operation,"f_t_combi12")
+
+   
+
+    
 
     return feature_dataframe
 
@@ -762,3 +793,52 @@ def combine_features(df, feature1, feature2, operation, name):
     df = df[columns]
 
     return df
+
+def get_features_below_mi_threshold(df: pd.DataFrame, mi_min: float) -> list:
+    
+    return df[df["MI_Score"] <= mi_min]["Feature"].tolist()
+
+
+def compare_df_structure(df1: pd.DataFrame, df2: pd.DataFrame):
+    differences = []
+    
+    # --- Spaltennamen ---
+    cols1 = list(df1.columns)
+    cols2 = list(df2.columns)
+    
+    if cols1 != cols2:
+        differences.append("⚠️ Spalten unterschiedlich in Reihenfolge oder Namen:")
+        # Welche fehlen in df2?
+        missing_in_df2 = [c for c in cols1 if c not in cols2]
+        if missing_in_df2:
+            differences.append(f"  In df1, nicht in df2: {missing_in_df2}")
+        # Welche fehlen in df1?
+        missing_in_df1 = [c for c in cols2 if c not in cols1]
+        if missing_in_df1:
+            differences.append(f"  In df2, nicht in df1: {missing_in_df1}")
+        # Gleiche Namen, aber andere Reihenfolge
+        if set(cols1) == set(cols2) and cols1 != cols2:
+            differences.append("  Gleiche Spalten, aber Reihenfolge unterschiedlich")
+    else:
+        differences.append("✅ Spaltennamen und Reihenfolge identisch")
+    
+    # --- Index / Zeilenreihenfolge ---
+    idx1 = list(df1.index)
+    idx2 = list(df2.index)
+    
+    if idx1 != idx2:
+        differences.append("⚠️ Index-Reihenfolge unterschiedlich")
+        # Fehlende Einträge:
+        missing_idx_in_df2 = [i for i in idx1 if i not in idx2]
+        if missing_idx_in_df2:
+            differences.append(f"  In df1, nicht in df2: {missing_idx_in_df2[:10]}{'...' if len(missing_idx_in_df2) > 10 else ''}")
+        missing_idx_in_df1 = [i for i in idx2 if i not in idx1]
+        if missing_idx_in_df1:
+            differences.append(f"  In df2, nicht in df1: {missing_idx_in_df1[:10]}{'...' if len(missing_idx_in_df1) > 10 else ''}")
+    else:
+        differences.append("✅ Index-Reihenfolge identisch")
+    
+    return "\n".join(differences)
+
+# Beispiel
+# print(compare_df_structure(df1, df2))
